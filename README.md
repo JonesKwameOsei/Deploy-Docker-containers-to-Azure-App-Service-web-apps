@@ -105,13 +105,13 @@ The choose `Service principal (manual)` and click on `Next`.<p>
 - Service Principal Id (appId), Service principal key (password) and Tenant ID (tenant).
 - In `Service connection name` type `azure-connection`. This name will be referenced in YAML pipelines when needing an Azure DevOps Service Connection to communicate with your Azure subscription.<p>
 ![connection5](https://github.com/JonesKwameOsei/Deploy-Docker-containers-to-Azure-App-Service-web-apps/assets/81886509/020b4c94-46c8-4e6f-bf2f-baa11b38dbc4)<p>
+
+Click on `Verify and Save`.<p>
 ![connection6](https://github.com/JonesKwameOsei/Deploy-Docker-containers-to-Azure-App-Service-web-apps/assets/81886509/9017155d-210f-435c-bbac-240913a4a7a5)<p>
 
-Click on `Verify and Save`.
+## Import and Run the CI Pipeline
 
-## Exercise 2: Import and Run the CI Pipeline
-
-In this exercise, you will import and run the CI pipeline.
+In this section, we will import and run the CI pipeline.
 
 ### Task 1: Import and Run the CI Pipeline
 
@@ -120,13 +120,83 @@ In this exercise, you will import and run the CI pipeline.
 3. Select `Azure Repos Git (YAML)`.
 4. Select the `eShopOnWeb` repository.
 5. Select `Existing Azure Pipelines YAML file`.
-6. Select the `main` branch and the `/.ado/eshoponweb-ci-docker.yml` file, then click on `Continue`.
+6. Select the `main` branch and the `/.ado/eshoponweb-ci-docker.yml` file, then click on `Continue`.<p>
+![pipeline](https://github.com/JonesKwameOsei/Deploy-Docker-containers-to-Azure-App-Service-web-apps/assets/81886509/a3eb4ee2-e343-45ff-842b-66db24a4d83c)<p>
+
 7. In the YAML pipeline definition, customize:
    - `YOUR-SUBSCRIPTION-ID` with your Azure subscription ID.
-   - `rg-az400-container-NAME` with the resource group name that will be created by the pipeline (it can be an existing resource group too).
-8. Click on `Save and Run` and wait for the pipeline to execute successfully.
+   - `rg-az400-container-NAME` with the resource group name that will be created by the pipeline (it can be an existing resource group too).<p>
+![pipeline2](https://github.com/JonesKwameOsei/Deploy-Docker-containers-to-Azure-App-Service-web-apps/assets/81886509/e8a8929f-b689-4e2a-82e3-376c9d3b29ef)<p>
 
-> Note: The deployment may take a few minutes to complete.
+8. Click on `Save and Run` and wait for the pipeline to execute successfully.
+Pipeline actions:<p>
+```
+# NAME THE PIPELINE SAME AS FILE (WITHOUT ".yml")
+
+resources:
+  repositories:
+    - repository: self
+      trigger: none
+
+variables:
+  azureServiceConnection: 'azure-connection'
+  subscriptionId: 'YOUR-SUBSCRIPTION-ID'
+  resourceGroup: 'rg-az400-container-NAME'
+  location: 'uksouth'
+
+stages:
+- stage: Build
+  jobs:
+  - job: Build
+    pool:
+      vmImage: 'ubuntu-latest'
+    steps:
+    - task: AzureResourceManagerTemplateDeployment@3
+      displayName: Deploy ACR using Bicep
+      inputs:
+        deploymentScope: 'Resource Group'
+        azureResourceManagerConnection: $(azureServiceConnection)
+        subscriptionId: $(subscriptionId)
+        action: 'Create Or Update Resource Group'
+        resourceGroupName: '$(resourceGroup)'
+        location: '$(location)'
+        templateLocation: 'Linked artifact'
+        csmFile: 'infra/acr.bicep'
+        deploymentMode: 'Incremental'
+        deploymentOutputs: 'outputJson'
+    - task: PowerShell@2
+      displayName: Parse Bicep Output
+      inputs:
+        targetType: 'inline'
+        script: |
+          $var=ConvertFrom-Json '$(outputJson)'
+          $value=$var.acrLoginServer.value
+          Write-Host "##vso[task.setvariable variable=acrLoginServer;]$value"
+    - task: Docker@0
+      displayName: 'Build the docker image'
+      inputs:
+        azureSubscription: $(azureServiceConnection)
+        azureContainerRegistry: $(acrLoginServer)
+        dockerFile: 'src/Web/Dockerfile'
+        defaultContext: false
+        context: $(Build.SourcesDirectory)
+        includeLatestTag: true
+        imageName: eshoponweb/web:$(Build.BuildId)
+    - task: Docker@0
+      displayName: 'Push the docker images'
+      inputs:
+        azureSubscription: $(azureServiceConnection)
+        azureContainerRegistry: $(acrLoginServer)
+        action: 'Push an image'
+        imageName: eshoponweb/web:$(Build.BuildId)
+        includeLatestTag: true
+```
+![pipeline3](https://github.com/JonesKwameOsei/Deploy-Docker-containers-to-Azure-App-Service-web-apps/assets/81886509/de564b0f-3e79-441a-b1fb-9b77cabdf79e)<p>
+
+> Note: The deployment may take a few minutes to complete.<p>
+![pipeline4](https://github.com/JonesKwameOsei/Deploy-Docker-containers-to-Azure-App-Service-web-apps/assets/81886509/cbeea778-94b5-4d83-a858-682ddc305d20)<p>
+![pipeline5-docker](https://github.com/JonesKwameOsei/Deploy-Docker-containers-to-Azure-App-Service-web-apps/assets/81886509/9e2642fe-dbc1-421f-9e86-416822e54c96)<p>
+![pipeline6-dockerbuild](https://github.com/JonesKwameOsei/Deploy-Docker-containers-to-Azure-App-Service-web-apps/assets/81886509/6d5b4eb6-da91-43a1-88c5-6bd57b637f25)<p>
 
 The CI definition consists of the following tasks:
 
@@ -136,17 +206,21 @@ The CI definition consists of the following tasks:
 - `Docker - Build`: Build the Docker image and create two tags (Latest and current BuildID).
 - `Docker - Push`: Push the images to Azure Container Registry.
 
-Your pipeline will take a name based on the project name. Let's rename it for identifying the pipeline better. Go to `Pipelines > Pipelines` and click on the recently created pipeline. Click on the ellipsis and `Rename/move` option. Name it `eshoponweb-ci-docker` and click on `Save`.
+9. The pipeline will take a name based on the project name. Let's rename it for identifying the pipeline better. Go to `Pipelines > Pipelines` and click on the recently created pipeline. Click on the ellipsis and `Rename/move` option. Name it `eshoponweb-ci-docker` and click on `Save`.<p>
+![pipeline7-renamed](https://github.com/JonesKwameOsei/Deploy-Docker-containers-to-Azure-App-Service-web-apps/assets/81886509/1a64c61a-9a19-4998-9a48-9341f961abba)<p>
 
-Navigate to the Azure Portal, search for the Azure Container Registry in the recently created Resource Group (it should be named `rg-az400-container-NAME`). On the left-hand side click `Repositories` under Services and make sure that the repository `eshoponweb/web` was created. When you click the repository link, you should see two tags (one of them is `latest`), these are the pushed images. If you don't see this, check the status of your pipeline.
+10. Navigate to the Azure Portal, search for the Azure Container Registry in the recently created Resource Group (it should be named `rg-az400-container-NAME`). On the left-hand side click `Repositories` under Services and make sure that the repository `eshoponweb/web` was created. When you click the repository link, you should see two tags (one of them is `latest`), these are the pushed images. If you don't see this, check the status of your pipeline.<p>
+![azure-container](https://github.com/JonesKwameOsei/Deploy-Docker-containers-to-Azure-App-Service-web-apps/assets/81886509/b50be430-9cca-45cd-a11c-3f2f2da3d8c6)<p>
+![azure-container2](https://github.com/JonesKwameOsei/Deploy-Docker-containers-to-Azure-App-Service-web-apps/assets/81886509/01f31d73-3efb-44c9-a439-f59b152a156d)<p>
+
 
 ## Exercise 3: Import and Run the CD Pipeline
 
-In this exercise, you will configure the service connection with your Azure Subscription then import and run the CD pipeline.
+In this exercise, we will configure the service connection with your Azure Subscription then import and run the CD pipeline.
 
 ### Task 1: Add a New Role Assignment
 
-In this task, you will add a new role assignment to allow Azure App Service pull the Docker image from Azure Container Registry.
+In this task, we will add a new role assignment to allow Azure App Service pull the Docker image from Azure Container Registry.
 
 1. Navigate to the Azure Portal.
 2. In the Azure portal, click on the Cloud Shell icon, located directly to the right of the search textbox at the top of the page.
@@ -168,36 +242,85 @@ In this task, you will add a new role assignment to allow Azure App Service pull
    az role assignment create --assignee $spId --role $roleName --scope /subscriptions/$subscriptionId/resourceGroups/<rg-az400-container-NAME>
    ```
 
-You should now see the JSON output which confirms the success of the command run.
+A JSON output which confirms the success of the command run should be populated.
 
 ### Task 2: Import and Run the CD Pipeline
 
-In this task, you will import and run the CD pipeline.
-
+In this task, we will import and run the CD pipeline.
+In the project on Azure DevOps: 
 1. Go to `Pipelines > Pipelines`.
 2. Click on `New pipeline` button.
 3. Select `Azure Repos Git (YAML)`.
 4. Select the `eShopOnWeb` repository.
 5. Select `Existing Azure Pipelines YAML File`.
-6. Select the `main` branch and the `/.ado/eshoponweb-cd-webapp-docker.yml` file, then click on `Continue`.
+6. Select the `main` branch and the `/.ado/eshoponweb-cd-webapp-docker.yml` file, then click on `Continue`.<p>
+![pipeline-no2](https://github.com/JonesKwameOsei/Deploy-Docker-containers-to-Azure-App-Service-web-apps/assets/81886509/e3d2c8f5-b47b-4607-a814-506062c892ca)<p>
+
 7. In the YAML pipeline definition, customize:
    - `YOUR-SUBSCRIPTION-ID` with your Azure subscription ID.
-   - `rg-az400-container-NAME` with the resource group name defined before in the lab.
-8. Click on `Save and Run` and wait for the pipeline to execute successfully.
+   - `rg-az400-container-NAME` with the resource group name defined before in the lab.<p>
+```
+#NAME 
+
+resources:
+  repositories:
+    - repository: self
+      trigger: none
+
+variables:
+  azureServiceConnection: 'azure-connection'
+  resourceGroup: 'rg-az400-container-NAME'
+  location: 'westeurope'
+  subscriptionId: 'YOUR-SUBSCRIPTION-ID'
+
+stages:
+- stage: Deploy
+  jobs:
+  - job: Deploy
+    pool:
+      vmImage: ubuntu-latest
+    steps:
+    - task: AzureResourceManagerTemplateDeployment@3
+      displayName: Deploy App Service using Bicep
+      inputs:
+        deploymentScope: 'Resource Group'
+        azureResourceManagerConnection: $(azureServiceConnection)
+        subscriptionId: $(subscriptionId)
+        action: 'Create Or Update Resource Group'
+        resourceGroupName: '$(resourceGroup)'
+        location: '$(location)'
+        templateLocation: 'Linked artifact'
+        csmFile: 'infra/webapp-docker.bicep'
+        deploymentMode: 'Incremental'
+    - task: AzureResourceManagerTemplateDeployment@3
+      displayName: Add Role Assignment using Bicep
+      inputs:
+        deploymentScope: 'Resource Group'
+        azureResourceManagerConnection: $(azureServiceConnection)
+        subscriptionId: $(subscriptionId)
+        action: 'Create Or Update Resource Group'
+        resourceGroupName: '$(resourceGroup)'
+        location: '$(location)'
+        templateLocation: 'Linked artifact'
+        csmFile: 'infra/webapp-to-acr-roleassignment.bicep'
+        deploymentMode: 'Incremental'
+```
+8. Click on `Save and Run` and wait for the pipeline to execute successfully.<p>
+![pipeline-no2-3](https://github.com/JonesKwameOsei/Deploy-Docker-containers-to-Azure-App-Service-web-apps/assets/81886509/86c566b8-4f29-4368-b39e-d9f41a6be115)<p>
 
 > Note: The deployment may take a few minutes to complete.
-
-> Important: If you receive the error message "TF402455: Pushes to this branch are not permitted; you must use a pull request to update this branch.", you need to uncheck the "Require a minimum number of reviewers" Branch protection rule enabled in the previous labs.
-
-Continuing the paraphrased content in Markdown format:
 
 The CD definition consists of the following tasks:
 
 - `Resources`: It downloads the repository files that will be used in the following tasks.
 - `AzureResourceManagerTemplateDeployment`: Deploys the Azure App Service using bicep template.
-- `AzureResourceManagerTemplateDeployment`: Add role assignment using Bicep.
+- `AzureResourceManagerTemplateDeployment`: Add role assignment using Bicep.<p>
+![pipeline-no2-3](https://github.com/JonesKwameOsei/Deploy-Docker-containers-to-Azure-App-Service-web-apps/assets/81886509/3a929b43-d9a3-40c1-9ef7-745c3d8a4efe)<p>
 
-Your pipeline will take a name based on the project name. Let's rename it for identifying the pipeline better. Go to `Pipelines > Pipelines` and hover on the recently created pipeline. Click on the ellipsis and `Rename/move` option. Name it `eshoponweb-cd-webapp-docker` and click on `Save`.
+> Important: If you receive the error message "TF402455: Pushes to this branch are not permitted; you must use a pull request to update this branch.", you need to uncheck the "Require a minimum number of reviewers" Branch protection rule enabled in the previous labs.
+
+9. The pipeline will take a name based on the project name. Let's rename it for identifying the pipeline better. Go to `Pipelines > Pipelines` and hover on the recently created pipeline. Click on the ellipsis and `Rename/move` option. Name it `eshoponweb-cd-webapp-docker` and click on `Save`.<p>
+![pipeline-no2-5 renamed](https://github.com/JonesKwameOsei/Deploy-Docker-containers-to-Azure-App-Service-web-apps/assets/81886509/ae3b424d-b2f7-4b48-b819-5965129cb8c0)<p>
 
 > Note 1: The use of the `/infra/webapp-docker.bicep` template creates an app service plan, a web app with system assigned managed identity enabled, and references the Docker image pushed previously: `${acr.properties.loginServer}/eshoponweb/web:latest`.
 
@@ -205,13 +328,19 @@ Your pipeline will take a name based on the project name. Let's rename it for id
 
 ### Task 3: Test the Solution
 
-In the Azure Portal, navigate to the recently created Resource Group, you should now see three resources (App Service, App Service Plan and Container Registry).
+1. In the Azure Portal, navigate to the recently created Resource Group, now we can see three resources (App Service, App Service Plan and Container Registry).<p>
+![image](https://github.com/JonesKwameOsei/Deploy-Docker-containers-to-Azure-App-Service-web-apps/assets/81886509/d3eb011e-f1bb-4c47-a2a2-1f42967ef3b0)<p>
 
-Navigate to the App Service, then click `Browse`, this will take you to the website.
+2. Navigate to the App Service, then click `Browse`, this will take us to the website.<p>
+The webapp is live!:<p>
+![image](https://github.com/JonesKwameOsei/Deploy-Docker-containers-to-Azure-App-Service-web-apps/assets/81886509/467528f7-c3a3-4bf9-b46f-9ba29906a268)<p>
+![image](https://github.com/JonesKwameOsei/Deploy-Docker-containers-to-Azure-App-Service-web-apps/assets/81886509/cd11ff62-3055-45e0-8958-04f8112b0d02)<p>
+![image](https://github.com/JonesKwameOsei/Deploy-Docker-containers-to-Azure-App-Service-web-apps/assets/81886509/7e78ebbf-90bd-4ee7-9780-a2b357518210)
 
-Congratulations! In this exercise, you deployed a website using a custom Docker image.
 
-## Exercise 4: Remove the Azure Lab Resources
+Congratulations!, we have deployed a website using a custom Docker image.
+
+## Remove the Azure Lab Resources
 
 In this exercise, you will remove the Azure resources provisioned in this lab to eliminate unexpected charges.
 
@@ -219,7 +348,7 @@ In this exercise, you will remove the Azure resources provisioned in this lab to
 
 ### Task 1: Remove the Azure Lab Resources
 
-In this task, you will use Azure Cloud Shell to remove the Azure resources provisioned in this lab to eliminate unnecessary charges.
+Hhaving completed the project, we will use Azure Cloud Shell to remove the Azure resources provisioned in this lab to eliminate unnecessary charges.
 
 1. In the Azure portal, open the Bash shell session within the Cloud Shell pane.
 2. List all resource groups created throughout the labs of this module by running the following command:
@@ -236,7 +365,8 @@ In this task, you will use Azure Cloud Shell to remove the Azure resources provi
 
 > Note: The command executes asynchronously (as determined by the `--nowait` parameter), so while you will be able to run another Azure CLI command immediately afterwards within the same Bash session, it will take a few minutes before the resource groups are actually removed.
 
-
+## Conclusion
+In this project, I demonstrated how to use an `Azure DevOps CI/CD pipeline` to build a custom `Docker image`, push it to `Azure Container Registry`, and deploy it as a container to `Azure App Service`.
 
 
 
